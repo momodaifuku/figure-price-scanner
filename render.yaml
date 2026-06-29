@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: figure-price-scanner-mvp
+    env: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false # Requires manual entry in the Render dashboard during setup

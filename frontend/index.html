@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>フィギュア相場スキャナー - MVP</title>
+  
+  <!-- PWA対応メタタグ -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <meta name="theme-color" content="#030712">
+
+  <!-- Tailwind CSS v3 CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Google Fonts: Inter & Noto Sans JP -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'Noto Sans JP', 'sans-serif'],
+          },
+        },
+      },
+    }
+  </script>
+
+  <style>
+    /* サイバーパンク/フューチャリスティックなスキャンラインアニメーション */
+    @keyframes scan {
+      0% { top: 0%; opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { top: 100%; opacity: 0; }
+    }
+    .animate-scan-line {
+      animation: scan 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 flex flex-col justify-between min-h-screen font-sans selection:bg-cyan-500 selection:text-slate-950">
+
+  <!-- ヘッダー -->
+  <header class="border-b border-slate-800/80 bg-slate-900/50 backdrop-blur-md sticky top-0 z-10 px-4 py-3">
+    <div class="max-w-md mx-auto flex items-center justify-between">
+      <div class="flex items-center gap-2">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h.01M16 20h2M4 12h2m4-8h2m-8 8v.01M4 16h2M4 8h2m12 4h.01" />
+          </svg>
+        </div>
+        <span class="font-bold text-lg tracking-wider bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+          FIG-SCAN
+        </span>
+      </div>
+      <span class="text-xs font-semibold bg-cyan-500/10 text-cyan-400 px-2 py-0.5 rounded-full border border-cyan-500/20">
+        MVP v0.4
+      </span>
+    </div>
+  </header>
+
+  <!-- メインコンテンツ -->
+  <main class="flex-grow flex flex-col justify-start px-4 py-6 max-w-md mx-auto w-full">
+    
+    <!-- アプリ説明 -->
+    <div class="text-center mb-6">
+      <h1 class="text-2xl font-bold text-slate-100 mb-1">フィギュア相場スキャナー</h1>
+      <p class="text-slate-400 text-sm">カメラでかざすだけで、メルカリなどの相場を瞬時に検出します。</p>
+    </div>
+
+    <!-- スキャンエリア -->
+    <div 
+      id="drop-zone"
+      class="relative group aspect-[4/5] w-full rounded-3xl border-2 border-dashed border-slate-700 hover:border-cyan-500/70 bg-slate-900/30 hover:bg-slate-900/50 transition-all duration-300 flex flex-col items-center justify-center cursor-pointer overflow-hidden shadow-inner"
+    >
+      <!-- アップロード前の案内 -->
+      <div id="upload-prompt" class="flex flex-col items-center text-center p-6 space-y-4">
+        <div class="w-16 h-16 rounded-full bg-slate-800/80 border border-slate-700/80 flex items-center justify-center group-hover:scale-110 group-hover:border-cyan-500/50 group-hover:bg-cyan-950/20 transition-all duration-300">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-slate-400 group-hover:text-cyan-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        </div>
+        <div>
+          <p class="font-medium text-slate-200 text-base">背面カメラでスキャン / 画像を選択</p>
+          <p class="text-xs text-slate-500 mt-1">タップしてカメラを起動、または画像をドラッグ</p>
+        </div>
+      </div>
+
+      <!-- 画像プレビュー -->
+      <img id="image-preview" class="hidden w-full h-full object-cover rounded-[22px]" alt="Preview">
+
+      <!-- スキャンアニメーションオーバーレイ -->
+      <div id="scanning-overlay" class="hidden absolute inset-0 bg-slate-950/85 backdrop-blur-[3px] flex flex-col items-center justify-center">
+        <!-- スキャンライン -->
+        <div class="absolute left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_12px_rgba(34,211,238,0.8)] animate-scan-line"></div>
+        
+        <!-- ローディングスピナー -->
+        <div class="flex flex-col items-center space-y-4">
+          <div class="w-12 h-12 rounded-full border-4 border-slate-800 border-t-cyan-500 animate-spin"></div>
+          <div class="text-center px-4">
+            <p class="font-bold text-cyan-400 tracking-wider">フィギュアを識別し、現在の相場を収集中...</p>
+            <p class="text-xs text-slate-400 mt-1">特徴の分析と各フリマ・オークションサイトの価格を検索しています</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 隠しファイルインプット (背面カメラ優先起動: capture="environment" を設定) -->
+      <input 
+        type="file" 
+        id="file-input" 
+        class="hidden" 
+        accept="image/*"
+        capture="environment"
+      >
+    </div>
+
+    <!-- ヘルプテキスト -->
+    <p class="text-center text-xs text-slate-600 mt-4 leading-relaxed">
+      ※店舗での撮影時は、周りの迷惑にならないよう十分ご配慮ください。<br>
+      スマホの「背面（外）カメラ」が起動します。
+    </p>
+
+    <!-- 履歴セクション -->
+    <section class="w-full mt-10">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+        <h2 class="font-bold text-sm text-slate-300 flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          スキャン履歴
+        </h2>
+        <button id="clear-history-btn" class="text-xs font-semibold text-slate-500 hover:text-red-400 transition-colors hidden">
+          履歴をすべて削除
+        </button>
+      </div>
+
+      <!-- 履歴リスト本体 -->
+      <div id="history-list" class="space-y-3">
+        <!-- 履歴がない場合の表示 -->
+        <div id="empty-history" class="text-center py-8 bg-slate-900/10 border border-dashed border-slate-850 rounded-2xl">
+          <p class="text-xs text-slate-500">スキャン履歴はありません</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- フッター -->
+  <footer class="text-center py-6 border-t border-slate-905 bg-slate-950/50 mt-12">
+    <p class="text-xs text-slate-600">&copy; 2026 FIG-SCAN Project. All Rights Reserved.</p>
+  </footer>
+
+  <!-- スキャン結果モーダルポップアップ -->
+  <div id="result-modal" class="hidden fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-slate-950/90 backdrop-blur-sm transition-opacity duration-300">
+    
+    <!-- モーダル本体 -->
+    <div class="w-full max-w-md bg-slate-900 border border-slate-800 rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl transform translate-y-0 transition-transform duration-300">
+      
+      <!-- 装飾ヘッダー -->
+      <div class="bg-gradient-to-r from-cyan-500/20 to-blue-500/20 px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span class="text-xs font-bold text-emerald-400 uppercase tracking-widest">AI識別完了</span>
+        </div>
+        <button id="close-modal-btn" class="text-slate-400 hover:text-white transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- モーダル中身 -->
+      <div class="p-6 space-y-5">
+        
+        <!-- 商品基本情報 -->
+        <div class="space-y-2">
+          <div class="flex flex-wrap gap-1.5">
+            <span id="result-series" class="text-[10px] font-bold text-cyan-400 bg-cyan-950/40 border border-cyan-800/30 px-2 py-0.5 rounded">
+              シリーズ名
+            </span>
+            <span id="result-maker" class="text-[10px] font-bold text-purple-400 bg-purple-950/40 border border-purple-800/30 px-2 py-0.5 rounded">
+              メーカー名
+            </span>
+          </div>
+          <h2 id="result-title" class="text-lg font-bold text-slate-100 leading-snug">
+            商品タイトル
+          </h2>
+        </div>
+
+        <!-- 相場比較セクション -->
+        <div class="grid grid-cols-2 gap-4">
+          <!-- メルカリ -->
+          <div id="mercari-card" class="bg-slate-850/50 border border-slate-850 rounded-2xl p-4 flex flex-col justify-between hover:border-cyan-500/30 transition-all duration-300">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-[11px] font-bold text-slate-400">参考メルカリ相場</span>
+              <span class="text-[9px] text-red-400 font-bold bg-red-950/20 border border-red-800/20 px-1.5 py-0.5 rounded">Mercari</span>
+            </div>
+            <div class="flex items-baseline gap-1 mt-2">
+              <span class="text-xl font-extrabold text-white tracking-tight" id="result-mercari-price">---</span>
+              <span class="text-xs text-slate-400" id="result-mercari-currency">円</span>
+            </div>
+          </div>
+
+          <!-- ヤフオク -->
+          <div id="yahoo-card" class="bg-slate-850/50 border border-slate-850 rounded-2xl p-4 flex flex-col justify-between hover:border-cyan-500/30 transition-all duration-300">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-[11px] font-bold text-slate-400">参考ヤフオク相場</span>
+              <span class="text-[9px] text-yellow-400 font-bold bg-yellow-950/20 border border-yellow-800/20 px-1.5 py-0.5 rounded">Yahoo!</span>
+            </div>
+            <div class="flex items-baseline gap-1 mt-2">
+              <span class="text-xl font-extrabold text-white tracking-tight" id="result-yahoo-price">---</span>
+              <span class="text-xs text-slate-400" id="result-yahoo-currency">円</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 検索キーワード ＆ フリマ直接リンク（編集可能なインプット＆再検索仕様） -->
+        <div class="bg-slate-950/40 border border-slate-850 rounded-2xl p-4 space-y-3">
+          <div class="flex flex-col gap-2 border-b border-slate-850 pb-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-slate-400">最適化キーワード（手動編集して再検索可能）</span>
+            </div>
+            <div class="flex gap-2">
+              <input 
+                type="text" 
+                id="result-keyword-input" 
+                class="flex-grow bg-slate-800/70 border border-slate-700/80 rounded-xl px-3 py-2 text-xs font-semibold text-slate-100 focus:outline-none focus:border-cyan-500 transition-colors"
+                placeholder="検索キーワードを入力"
+              >
+              <button 
+                id="re-search-btn"
+                class="bg-cyan-600 hover:bg-cyan-500 active:scale-[0.98] transition-all text-white font-bold text-xs px-3.5 py-2 rounded-xl text-center shadow-lg shadow-cyan-600/10 flex items-center justify-center gap-1.5 min-w-[70px]"
+              >
+                <!-- 再検索用ローディングスピナー -->
+                <svg id="re-search-spinner" class="hidden animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span id="re-search-btn-text">再検索</span>
+              </button>
+            </div>
+          </div>
+          
+          <div class="text-[11px] text-slate-400 pb-1">
+            👇 ワンタップでフリマの実相場をリアルタイム確認！
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <a 
+              id="mercari-link" 
+              href="#" 
+              target="_blank" 
+              class="flex items-center justify-center gap-1.5 py-2.5 bg-red-600 hover:bg-red-500 active:scale-[0.98] transition-all rounded-xl text-xs font-bold text-white text-center shadow-lg shadow-red-600/10"
+            >
+              <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+              </svg>
+              メルカリで調べる
+            </a>
+            <a 
+              id="yahoo-link" 
+              href="#" 
+              target="_blank" 
+              class="flex items-center justify-center gap-1.5 py-2.5 bg-yellow-500 hover:bg-yellow-400 active:scale-[0.98] transition-all rounded-xl text-xs font-bold text-slate-950 text-center shadow-lg shadow-yellow-500/10"
+            >
+              <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+              </svg>
+              ヤフオクで調べる
+            </a>
+          </div>
+        </div>
+
+        <!-- アクションボタン -->
+        <div class="pt-1 flex flex-col gap-3">
+          <button 
+            id="retry-btn"
+            class="w-full py-3.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 active:scale-[0.98] transition-all rounded-xl font-semibold text-white shadow-lg shadow-cyan-500/20 text-center text-sm"
+          >
+            もう一度スキャンする
+          </button>
+          <button 
+            id="cancel-btn"
+            class="w-full py-3 bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 font-semibold rounded-xl text-center text-sm transition-colors"
+          >
+            閉じる
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const uploadPrompt = document.getElementById('upload-prompt');
+    const imagePreview = document.getElementById('image-preview');
+    const scanningOverlay = document.getElementById('scanning-overlay');
+    
+    // モーダル関連
+    const resultModal = document.getElementById('result-modal');
+    const closeModalBtn = document.getElementById('close-modal-btn');
+    const cancelBtn = document.getElementById('cancel-btn');
+    const retryBtn = document.getElementById('retry-btn');
+    
+    // 結果表示項目
+    const resSeries = document.getElementById('result-series');
+    const resMaker = document.getElementById('result-maker');
+    const resTitle = document.getElementById('result-title');
+    const resMercari = document.getElementById('result-mercari-price');
+    const resYahoo = document.getElementById('result-yahoo-price');
+    const resKeywordInput = document.getElementById('result-keyword-input');
+    const reSearchBtn = document.getElementById('re-search-btn');
+    const reSearchBtnText = document.getElementById('re-search-btn-text');
+    const reSearchSpinner = document.getElementById('re-search-spinner');
+    
+    // 外部リンク
+    const mercariLink = document.getElementById('mercari-link');
+    const yahooLink = document.getElementById('yahoo-link');
+
+    // 単位表示要素
+    const resMercariCurrency = document.getElementById('result-mercari-currency');
+    const resYahooCurrency = document.getElementById('result-yahoo-currency');
+
+    // 履歴管理のDOM
+    const historyList = document.getElementById('history-list');
+    const emptyHistory = document.getElementById('empty-history');
+    const clearHistoryBtn = document.getElementById('clear-history-btn');
+
+    // 履歴同期用の直近保存ID管理
+    let lastScannedId = null;
+
+    // DOMロード時に履歴読み込み
+    document.addEventListener('DOMContentLoaded', loadHistory);
+
+    // 履歴全クリア
+    clearHistoryBtn.addEventListener('click', () => {
+      if (confirm('すべてのスキャン履歴を削除しますか？')) {
+        localStorage.removeItem('scan_history');
+        loadHistory();
+      }
+    });
+
+    // エリアクリックでファイルインプット起動
+    dropZone.addEventListener('click', () => {
+      if (!scanningOverlay.classList.contains('hidden')) return;
+      fileInput.click();
+    });
+
+    // ドラッグ＆ドロップのイベント制御
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        dropZone.classList.add('border-cyan-500', 'bg-slate-900/60');
+      }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('border-cyan-500', 'bg-slate-900/60');
+      }, false);
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      if (!scanningOverlay.classList.contains('hidden')) return;
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      if (files.length > 0) {
+        handleFile(files[0]);
+      }
+    });
+
+    // ファイル選択検知
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        handleFile(e.target.files[0]);
+      }
+    });
+
+    // ファイル処理・送信処理
+    function handleFile(file) {
+      if (!file.type.startsWith('image/')) {
+        alert('画像ファイルを選択してください。');
+        return;
+      }
+
+      // 画像プレビューの表示
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        imagePreview.src = e.target.result;
+        imagePreview.classList.remove('hidden');
+        uploadPrompt.classList.add('hidden');
+        
+        // スキャンアニメーション起動
+        startScanning(file);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // スキャン開始とAPI送信
+    async function startScanning(file) {
+      scanningOverlay.classList.remove('hidden');
+
+      const formData = new FormData();
+      formData.append('file', file);
+
+      try {
+        const response = await fetch('/api/scan', {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.detail || 'サーバーエラーが発生しました。');
+        }
+        
+        showResult(result.data);
+        
+        // スキャン成功時に履歴へ追加 (プレビュー画像のデータソースを使用)
+        addScanToHistory(result.data, imagePreview.src);
+
+      } catch (error) {
+        console.error('Error scanning figure:', error);
+        alert(error.message || '相場情報の取得に失敗しました。APIキー等の設定を確認してください。');
+        resetScanner();
+      }
+    }
+
+    // 結果表示
+    function showResult(data) {
+      scanningOverlay.classList.add('hidden');
+      
+      // データ流し込み
+      resSeries.textContent = data.series_name || '不明';
+      resMaker.textContent = data.maker_name || '不明';
+      resTitle.textContent = data.product_name || '不明なフィギュア';
+      
+      // 価格表示フォーマット
+      updatePriceDisplay(data.mercari_price, data.yahoo_price);
+      
+      resKeywordInput.value = data.search_keyword || data.product_name || 'フィギュア';
+
+      // 外部リンク設定
+      updateLinkUrls(data.search_keyword || data.product_name || '');
+
+      // モーダル表示
+      resultModal.classList.remove('hidden');
+    }
+
+    // 価格表示の更新処理
+    function updatePriceDisplay(mercariPrice, yahooPrice) {
+      const formatPrice = (priceVal, currencyEl) => {
+        if (!priceVal || priceVal === '確認中' || isNaN(priceVal.replace(/,/g, ''))) {
+          currencyEl.classList.add('hidden');
+          return priceVal || '確認中';
+        } else {
+          currencyEl.classList.remove('hidden');
+          return Number(priceVal.replace(/,/g, '')).toLocaleString();
+        }
+      };
+
+      resMercari.textContent = formatPrice(mercariPrice, resMercariCurrency);
+      resYahoo.textContent = formatPrice(yahooPrice, resYahooCurrency);
+    }
+
+    // 検索リンクURLの更新処理
+    function updateLinkUrls(searchWord) {
+      const encodedKeyword = encodeURIComponent(searchWord);
+      mercariLink.href = `https://jp.mercari.com/search?keyword=${encodedKeyword}`;
+      yahooLink.href = `https://auctions.yahoo.co.jp/search/search?p=${encodedKeyword}`;
+    }
+
+    // スキャナーのリセット（初期化）
+    function resetScanner() {
+      imagePreview.classList.add('hidden');
+      imagePreview.src = '';
+      uploadPrompt.classList.remove('hidden');
+      scanningOverlay.classList.add('hidden');
+      fileInput.value = '';
+      lastScannedId = null;
+    }
+
+    // モーダルを閉じる
+    function hideModal() {
+      resultModal.classList.add('hidden');
+      resetScanner();
+    }
+
+    // モーダルイベント登録
+    closeModalBtn.addEventListener('click', hideModal);
+    cancelBtn.addEventListener('click', hideModal);
+    retryBtn.addEventListener('click', () => {
+      hideModal();
+      fileInput.click();
+    });
+
+    // --- 【Phase 5】手動キーワード再検索処理 ---
+
+    reSearchBtn.addEventListener('click', async () => {
+      const keyword = resKeywordInput.value.trim();
+      if (!keyword) {
+        alert('検索キーワードを入力してください。');
+        return;
+      }
+
+      // 1. UIのローディング表示化
+      reSearchBtn.disabled = true;
+      reSearchBtnText.classList.add('hidden');
+      reSearchSpinner.classList.remove('hidden');
+      
+      // 価格表示を「検索中...」にして円マークを隠す
+      resMercari.textContent = '検索中...';
+      resYahoo.textContent = '検索中...';
+      resMercariCurrency.classList.add('hidden');
+      resYahooCurrency.classList.add('hidden');
+
+      try {
+        // 2. キーワード直接指定でAPIを叩く
+        const response = await fetch(`/api/prices?keyword=${encodeURIComponent(keyword)}`);
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.detail || '再検索エラーが発生しました。');
+        }
+
+        const data = result.data;
+
+        // 3. 価格表示および検索リンク先を更新
+        updatePriceDisplay(data.mercari_price, data.yahoo_price);
+        updateLinkUrls(data.search_keyword);
+
+        // 4. ローカルストレージ内の履歴と同期 (直前スキャンしたアイテムがある場合)
+        if (lastScannedId) {
+          let history = JSON.parse(localStorage.getItem('scan_history') || '[]');
+          const itemIndex = history.findIndex(item => item.id === lastScannedId);
+          if (itemIndex !== -1) {
+            history[itemIndex].keyword = data.search_keyword;
+            history[itemIndex].mercariPrice = data.mercari_price;
+            history[itemIndex].yahooPrice = data.yahoo_price;
+            localStorage.setItem('scan_history', JSON.stringify(history));
+            loadHistory(); // 履歴リストを再レンダリングして即時反映
+          }
+        }
+
+      } catch (error) {
+        console.error('Error during re-search:', error);
+        alert(error.message || '価格情報の再取得に失敗しました。');
+        // エラー時は前の表示に戻す（モーダルの再表示などで対応）
+        updatePriceDisplay('エラー', 'エラー');
+      } finally {
+        // 5. ローディング状態の復帰
+        reSearchBtn.disabled = false;
+        reSearchBtnText.classList.remove('hidden');
+        reSearchSpinner.classList.add('hidden');
+      }
+    });
+
+    // --- 履歴管理ロジック ---
+
+    function loadHistory() {
+      // 履歴一覧を初期表示クリア
+      historyList.innerHTML = '';
+      
+      const history = JSON.parse(localStorage.getItem('scan_history') || '[]');
+      
+      if (history.length === 0) {
+        historyList.appendChild(emptyHistory);
+        emptyHistory.classList.remove('hidden');
+        clearHistoryBtn.classList.add('hidden');
+        return;
+      }
+      
+      emptyHistory.classList.add('hidden');
+      clearHistoryBtn.classList.remove('hidden');
+
+      // 新しい履歴が一番上に表示されるよう逆順でループ
+      history.slice().reverse().forEach(item => {
+        const card = document.createElement('div');
+        card.className = "bg-slate-900 border border-slate-800/80 rounded-2xl p-3.5 flex gap-3.5 hover:border-slate-800 transition-all duration-300 relative group";
+        
+        // 外部リンク用エンコード
+        const encodedKeyword = encodeURIComponent(item.keyword || item.title);
+        const mercariUrl = `https://jp.mercari.com/search?keyword=${encodedKeyword}`;
+        const yahooUrl = `https://auctions.yahoo.co.jp/search/search?p=${encodedKeyword}`;
+
+        // 価格の表示調整
+        const formatHistoryPrice = (p) => {
+          if (!p || p === '確認中' || isNaN(p.replace(/,/g, ''))) return p || '確認中';
+          return `¥${Number(p.replace(/,/g, '')).toLocaleString()}`;
+        };
+
+        card.innerHTML = `
+          <!-- サムネイル画像 -->
+          <div class="w-16 h-20 flex-shrink-0 bg-slate-950 rounded-xl overflow-hidden border border-slate-800/60 shadow-inner">
+            <img src="${item.thumbnail}" class="w-full h-full object-cover" alt="${item.title}">
+          </div>
+          
+          <!-- 基本情報 -->
+          <div class="flex-grow flex flex-col justify-between min-w-0">
+            <div>
+              <div class="flex items-start justify-between gap-2">
+                <span class="text-[9px] font-bold text-cyan-400 bg-cyan-950/40 border border-cyan-800/30 px-1.5 py-0.2 rounded truncate max-w-[170px]" title="${item.series}">
+                  ${item.series}
+                </span>
+                <!-- 個別削除ボタン -->
+                <button onclick="deleteHistoryItem('${item.id}')" class="text-slate-500 hover:text-red-400 p-0.5 transition-colors" title="削除">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4.5 w-4.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+              <h3 class="text-xs font-bold text-slate-100 mt-1 truncate pr-2" title="${item.title}">
+                ${item.title}
+              </h3>
+              <p class="text-[10px] text-slate-500 truncate">${item.maker}</p>
+            </div>
+            
+            <!-- 価格とEC遷移リンク -->
+            <div class="flex items-center justify-between gap-2 mt-2 pt-1.5 border-t border-slate-800/40">
+              <div class="flex gap-3">
+                <div class="flex flex-col">
+                  <span class="text-[8px] text-slate-500 font-bold uppercase tracking-wider">Mercari</span>
+                  <span class="text-xs font-extrabold text-red-400">${formatHistoryPrice(item.mercariPrice)}</span>
+                </div>
+                <div class="flex flex-col border-l border-slate-800 pl-3">
+                  <span class="text-[8px] text-slate-500 font-bold uppercase tracking-wider">Yahoo!</span>
+                  <span class="text-xs font-extrabold text-yellow-400">${formatHistoryPrice(item.yahooPrice)}</span>
+                </div>
+              </div>
+              
+              <!-- クイックリンクアイコン -->
+              <div class="flex gap-1.5">
+                <a href="${mercariUrl}" target="_blank" class="w-7 h-7 flex items-center justify-center bg-red-600/10 hover:bg-red-600 text-[10px] font-bold text-red-400 hover:text-white rounded-lg border border-red-500/20 transition-all shadow-sm" title="メルカリ検索: ${item.keyword || item.title}">M</a>
+                <a href="${yahooUrl}" target="_blank" class="w-7 h-7 flex items-center justify-center bg-yellow-500/10 hover:bg-yellow-500 text-[10px] font-bold text-yellow-500 hover:text-slate-950 rounded-lg border border-yellow-500/20 transition-all shadow-sm" title="ヤフオク検索: ${item.keyword || item.title}">Y</a>
+              </div>
+            </div>
+          </div>
+        `;
+        historyList.appendChild(card);
+      });
+    }
+
+    // 履歴アイテム削除
+    window.deleteHistoryItem = function(id) {
+      let history = JSON.parse(localStorage.getItem('scan_history') || '[]');
+      history = history.filter(item => item.id !== id);
+      localStorage.setItem('scan_history', JSON.stringify(history));
+      loadHistory();
+      if (lastScannedId === id) {
+        lastScannedId = null;
+      }
+    };
+
+    // スキャン成功時に履歴へ追加
+    function addScanToHistory(data, rawImageSrc) {
+      // 1. ローカルストレージ保護のための縮小圧縮
+      const img = new Image();
+      img.onload = function() {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 120;
+        const MAX_HEIGHT = 150;
+        let width = img.width;
+        let height = img.height;
+        
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.65);
+
+        // 新規ID発行
+        const newId = Date.now().toString();
+        lastScannedId = newId; // 直近スキャンIDに設定 (再検索同期用)
+
+        const newItem = {
+          id: newId,
+          title: data.product_name,
+          series: data.series_name,
+          maker: data.maker_name,
+          keyword: data.search_keyword,
+          mercariPrice: data.mercari_price,
+          yahooPrice: data.yahoo_price,
+          thumbnail: compressedBase64
+        };
+
+        const history = JSON.parse(localStorage.getItem('scan_history') || '[]');
+        history.push(newItem);
+        
+        if (history.length > 30) {
+          history.shift(); 
+        }
+        
+        localStorage.setItem('scan_history', JSON.stringify(history));
+        loadHistory();
+      };
+      img.src = rawImageSrc;
+    }
+  </script>
+</body>
+</html>
