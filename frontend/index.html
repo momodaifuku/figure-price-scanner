@@ -475,7 +475,7 @@
     // 検索リンクURLの更新処理
     function updateLinkUrls(searchWord) {
       const encodedKeyword = encodeURIComponent(searchWord);
-      mercariLink.href = `https://jp.mercari.com/search?keyword=${encodedKeyword}`;
+      mercariLink.href = `https://jp.mercari.com/search?keyword=${encodedKeyword}&status=sold_out&sort=created_time&order=desc`;
       yahooLink.href = `https://auctions.yahoo.co.jp/search/search?p=${encodedKeyword}`;
     }
 
@@ -589,7 +589,7 @@
         
         // 外部リンク用エンコード
         const encodedKeyword = encodeURIComponent(item.keyword || item.title);
-        const mercariUrl = `https://jp.mercari.com/search?keyword=${encodedKeyword}`;
+        const mercariUrl = `https://jp.mercari.com/search?keyword=${encodedKeyword}&status=sold_out&sort=created_time&order=desc`;
         const yahooUrl = `https://auctions.yahoo.co.jp/search/search?p=${encodedKeyword}`;
 
         // 価格の表示調整
