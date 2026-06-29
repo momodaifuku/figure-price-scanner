@@ -34,6 +34,8 @@ class FigureAnalysis(BaseModel):
     series_name: str = Field(description="フィギュアが登場するアニメやゲーム等の作品名（例: キャラクター・ボーカル・シリーズ01 初音ミク）")
     maker_name: str = Field(description="フィギュアを製造したメーカー名（例: グッドスマイルカンパニー）")
     search_keyword: str = Field(description="メルカリやヤフオクなどのフリマアプリで検索する際に最もヒットしやすい最適化された日本語の検索キーワード")
+    mercari_price: str = Field(description="AIが知識データベースから推測した、このフィギュアの大体のメルカリ参考相場（カンマなしの数値、例: 5800。どうしても推測できない場合は'確認中'と出力してください）")
+    yahoo_price: str = Field(description="AIが知識データベースから推測した、このフィギュアの大体のヤフオク参考相場（カンマなしの数値、例: 5500。どうしても推測できない場合は'確認中'と出力してください）")
 
 # --- インメモリ価格キャッシュの設定 ---
 # キャッシュ構造: { keyword: { "mercari_price": "5500", "yahoo_price": "5000", "timestamp": float } }
@@ -243,7 +245,9 @@ async def scan_figure(file: UploadFile = File(...)):
         client = genai.Client()
         prompt = (
             "添付された画像に写っているフィギュアを識別し、指示されたスキーマに従って情報を抽出してください。\n"
-            "search_keywordは、フリマサイト等で検索した際に最もヒット率が高くなるような、日本語の商品名とシリーズ名を含めた最適な検索キーワード（例: 'ねんどろいど 初音ミク'）にしてください。"
+            "search_keywordは、フリマサイト等で検索した際に最もヒット率が高くなるような、日本語の商品名とシリーズ名を含めた最適な検索キーワード（例: 'ねんどろいど 初音ミク'）にしてください。\n"
+            "mercari_priceとyahoo_priceには、あなたの知識データベースを元に、このフィギュアの中古市場での大体の平均的な参考相場価格（カンマなしの数値、例: 4500）を推測して出力してください。\n"
+            "もしどうしても価格が推測できない場合や不明な場合は'確認中'と出力してください。"
         )
 
         response = client.models.generate_content(
@@ -276,9 +280,10 @@ async def scan_figure(file: UploadFile = File(...)):
         print(f"AI Analysis Error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"画像解析処理エラー: {str(e)}")
 
-    # 相場情報の取得（キャッシュ優先）
-    keyword = analysis.search_keyword
-    final_mercari_price, final_yahoo_price = await get_market_prices(keyword)
+    # 初期スキャンは、AIの知識から推測した「大体の相場（なんとなくの相場）」を即時返却して高速化します。
+    # ユーザーがより正確なスクレイピング相場を知りたい場合は、フロントの「再検索」をクリックさせます。
+    final_mercari_price = analysis.mercari_price
+    final_yahoo_price = analysis.yahoo_price
 
     return {
         "status": "success",
