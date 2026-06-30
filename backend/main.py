@@ -42,11 +42,14 @@ class FigureAnalysis(BaseModel):
 PRICE_CACHE = {}
 CACHE_EXPIRE_SECONDS = 3 * 3600  # キャッシュ有効期限: 3時間
 
+# タイトルから除外するキーワード（まとめ売り、セット、ジャンク等を排除して単体価格を抽出）
+EXCLUDE_TITLE_KEYWORDS = ["まとめ", "セット", "set", "引退", "詰め合わせ", "ジャンク", "大量", "アソート", "福袋", "おまとめ"]
+
 # --- スクレイピングヘルパー関数 ---
 
 async def fetch_prices_from_yahoo(keyword: str) -> list[int]:
     """
-    ヤフオクの落札履歴（終了品相場）から落札価格リストを取得します。
+    ヤフオクの落札履歴（終了品相場）から「まとめ売り」「セット」等を除外した単体の落札価格リストを取得します。
     """
     url = f"https://auctions.yahoo.co.jp/closedsearch/closedsearch?p={keyword}"
     headers = {
@@ -58,21 +61,42 @@ async def fetch_prices_from_yahoo(keyword: str) -> list[int]:
             response = await client.get(url, headers=headers, follow_redirects=True)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, "html.parser")
-                price_elements = soup.find_all(class_=re.compile(r"(Product__priceValue|Price__value|Product__price)"))
-                for elem in price_elements:
-                    text = elem.get_text()
-                    num_str = "".join(re.findall(r"\d+", text.replace(",", "")))
-                    if num_str:
-                        price = int(num_str)
-                        if 300 < price < 300000:
-                            prices.append(price)
+                # 商品リストの各要素をパース
+                items = soup.select("li.Product, .Product")
+                for item in items:
+                    title_el = item.select_one(".Product__titleLink, a")
+                    price_el = item.select_one(".Product__priceValue, .Price__value, .Product__price")
+                    if title_el and price_el:
+                        title_text = title_el.get_text().lower()
+                        # まとめ売り、セット、ジャンク等を排除
+                        if any(kw in title_text for kw in EXCLUDE_TITLE_KEYWORDS):
+                            continue
+                        
+                        price_text = price_el.get_text()
+                        num_str = "".join(re.findall(r"\d+", price_text.replace(",", "")))
+                        if num_str:
+                            price = int(num_str)
+                            # 単体フィギュアとして現実的な価格範囲（300円〜60,000円）
+                            if 300 < price < 60000:
+                                prices.append(price)
+                                
+                # フォールバック（もしアイテム単位のパースが失敗した場合の旧ロジック互換）
+                if not prices:
+                    price_elements = soup.find_all(class_=re.compile(r"(Product__priceValue|Price__value|Product__price)"))
+                    for elem in price_elements:
+                        text = elem.get_text()
+                        num_str = "".join(re.findall(r"\d+", text.replace(",", "")))
+                        if num_str:
+                            price = int(num_str)
+                            if 300 < price < 30000:
+                                prices.append(price)
     except Exception as e:
         print(f"[Scraper] Yahoo Auction error: {e}")
     return prices
 
 async def fetch_prices_from_mercari(keyword: str) -> list[int]:
     """
-    メルカリの検索結果（売り切れ品）から販売価格リストを取得します。
+    メルカリの検索結果（売り切れ品）から「まとめ売り」「セット」等を除外した単体の販売価格リストを取得します。
     """
     url = f"https://jp.mercari.com/search?keyword={keyword}&status=sold_out"
     headers = {
@@ -95,30 +119,43 @@ async def fetch_prices_from_mercari(keyword: str) -> list[int]:
                         if isinstance(data, dict) and data.get("@type") == "ItemList":
                             for item in data.get("itemListElement", []):
                                 product = item.get("item", {})
+                                title = product.get("name", "").lower()
+                                # まとめ売り、セット、ジャンク等を排除
+                                if any(kw in title for kw in EXCLUDE_TITLE_KEYWORDS):
+                                    continue
+                                
                                 offers = product.get("offers", {})
                                 price = offers.get("price")
                                 if price:
-                                    prices.append(int(price))
+                                    val = int(price)
+                                    if 300 < val < 60000:
+                                        prices.append(val)
                     except Exception:
                         pass
                 
                 # 2. クラス名によるパース
                 if not prices:
-                    price_tags = soup.find_all(class_=re.compile(r"(price|Price)"))
-                    for tag in price_tags:
-                        text = tag.get_text()
-                        num_str = "".join(re.findall(r"\d+", text.replace(",", "")))
-                        if num_str:
-                            price = int(num_str)
-                            if 300 < price < 300000:
-                                prices.append(price)
+                    items = soup.select('li, [class*="Item"], [class*="item"]')
+                    for item in items:
+                        title_el = item.select_one('[class*="name"], [class*="Name"], a')
+                        price_el = item.select_one(class_=re.compile(r"(price|Price)"))
+                        if title_el and price_el:
+                            title_text = title_el.get_text().lower()
+                            if any(kw in title_text for kw in EXCLUDE_TITLE_KEYWORDS):
+                                continue
+                            price_text = price_el.get_text()
+                            num_str = "".join(re.findall(r"\d+", price_text.replace(",", "")))
+                            if num_str:
+                                price = int(num_str)
+                                if 300 < price < 60000:
+                                    prices.append(price)
     except Exception as e:
         print(f"[Scraper] Mercari error (likely blocked): {e}")
     return prices
 
 async def fetch_prices_from_surugaya(keyword: str) -> list[int]:
     """
-    駿河屋の検索結果から販売価格リストを取得します。
+    駿河屋の検索結果から「まとめ売り」「セット」等を除外した単体の中古販売価格リストを取得します。
     """
     url = f"https://www.suruga-ya.jp/search?category=&search_word={keyword}"
     headers = {
@@ -130,14 +167,33 @@ async def fetch_prices_from_surugaya(keyword: str) -> list[int]:
             response = await client.get(url, headers=headers, follow_redirects=True)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, "html.parser")
-                price_elements = soup.select(".text-red, .text-price, .price_intax, p.price")
-                for elem in price_elements:
-                    text = elem.get_text()
-                    num_str = "".join(re.findall(r"\d+", text.replace(",", "")))
-                    if num_str:
-                        price = int(num_str)
-                        if 300 < price < 300000:
-                            prices.append(price)
+                # 各商品コンテナ
+                items = soup.select(".item, .product, tr")
+                for item in items:
+                    title_el = item.select_one(".title, .name, a")
+                    price_el = item.select_one(".text-red, .text-price, .price_intax, p.price")
+                    if title_el and price_el:
+                        title_text = title_el.get_text().lower()
+                        if any(kw in title_text for kw in EXCLUDE_TITLE_KEYWORDS):
+                            continue
+                        
+                        price_text = price_el.get_text()
+                        num_str = "".join(re.findall(r"\d+", price_text.replace(",", "")))
+                        if num_str:
+                            price = int(num_str)
+                            if 300 < price < 60000:
+                                prices.append(price)
+                                
+                # フォールバック
+                if not prices:
+                    price_elements = soup.select(".text-red, .text-price, .price_intax, p.price")
+                    for elem in price_elements:
+                        text = elem.get_text()
+                        num_str = "".join(re.findall(r"\d+", text.replace(",", "")))
+                        if num_str:
+                            price = int(num_str)
+                            if 300 < price < 30000:
+                                prices.append(price)
     except Exception as e:
         print(f"[Scraper] Surugaya error: {e}")
     return prices
@@ -246,7 +302,7 @@ async def scan_figure(file: UploadFile = File(...)):
         prompt = (
             "添付された画像に写っているフィギュアを識別し、指示されたスキーマに従って情報を抽出してください。\n"
             "search_keywordは、フリマサイト等で検索した際に最もヒット率が高くなるような、日本語の商品名とシリーズ名を含めた最適な検索キーワード（例: 'ねんどろいど 初音ミク'）にしてください。\n"
-            "mercari_priceとyahoo_priceには、あなたの知識データベースを元に、このフィギュアの中古市場での大体の平均的な参考相場価格（カンマなしの数値、例: 4500）を推測して出力してください。\n"
+            "mercari_priceとyahoo_priceには、あなたの知識データベースを元に、【まとめ売り・セット売り・詰め合わせ・限定豪華版同梱セットなどの高額ケースを除外した、このフィギュア単体（中古・箱あり・良品）】の中古市場における大体の参考相場価格（カンマなしの数値、例: 4500）を推測して出力してください。\n"
             "もしどうしても価格が推測できない場合や不明な場合は'確認中'と出力してください。"
         )
 
