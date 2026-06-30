@@ -382,6 +382,12 @@ async def scan_figure(file: UploadFile = File(...)):
 
     except APIError as e:
         print(f"Gemini API Error: {str(e)}")
+        error_msg = str(e)
+        if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
+            raise HTTPException(
+                status_code=429,
+                detail="Gemini APIの無料枠の利用制限（上限）に達しました。Google AI Studioで課金設定（Pay-as-you-go）を有効にするか、制限がリセットされるまでしばらく待ってから再度お試しください。"
+            )
         raise HTTPException(status_code=502, detail=f"Gemini API 接続エラー: {str(e)}")
     except Exception as e:
         print(f"AI Analysis Error: {str(e)}")
