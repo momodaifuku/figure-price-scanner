@@ -62,26 +62,55 @@ async def fetch_prices_from_yahoo(keyword: str) -> list[int]:
             response = await client.get(url, headers=headers, follow_redirects=True)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, "html.parser")
-                # 商品リストの各要素をパース
-                items = soup.select("li.Product, .Product")
+                links = soup.find_all("a", href=True)
+                item_links = [l for l in links if "yahoo.co.jp/jp/auction/" in l['href']]
+                
                 now = datetime.now()
-                for item in items:
-                    title_el = item.select_one(".Product__titleLink, a")
-                    price_el = item.select_one(".Product__priceValue, .Price__value, .Product__price")
-                    time_el = item.select_one(".Product__time")
+                processed_urls = set()
+                
+                for a_tag in item_links:
+                    parent = a_tag.find_parent("div") or a_tag.parent
+                    parent_text = parent.get_text(separator=" | ").strip()
+                    if not parent_text:
+                        continue
                     
-                    if title_el and price_el:
-                        title_text = title_el.get_text().lower()
-                        # まとめ売り、セット、ジャンク等を排除
-                        if any(kw in title_text for kw in EXCLUDE_TITLE_KEYWORDS):
+                    parts = [p.strip() for p in parent_text.split("|") if p.strip()]
+                    
+                    if "落札" in parts:
+                        url_val = a_tag['href']
+                        # 重複検知は正常な親要素を持つもののみで行う
+                        if url_val in processed_urls:
+                            continue
+                        processed_urls.add(url_val)
+
+                        idx = parts.index("落札")
+                        if idx - 1 >= 0:
+                            title = parts[idx - 1]
+                        else:
+                            continue
+                            
+                        if idx + 1 < len(parts):
+                            price_str = parts[idx + 1]
+                        else:
                             continue
                         
+                        # まとめ売り、セット、ジャンク等を排除
+                        if any(kw in title.lower() for kw in EXCLUDE_TITLE_KEYWORDS):
+                            continue
+                            
+                        # 価格のパース
+                        num_str = "".join(re.findall(r"\d+", price_str.replace(",", "")))
+                        if not num_str:
+                            continue
+                        price = int(num_str)
+                        
                         # 落札日時のチェック（直近2週間以内の落札のみを対象とする）
-                        if time_el:
-                            time_text = time_el.get_text()
-                            # "6/30(火) 9:20" などの形式から月・日を抽出
-                            match = re.search(r"(\d+)/(\d+)", time_text)
+                        is_old = False
+                        time_val = "Unknown"
+                        for part in parts[idx:]:
+                            match = re.search(r"(\d+)/(\d+)", part)
                             if match:
+                                time_val = part
                                 month = int(match.group(1))
                                 day = int(match.group(2))
                                 
@@ -94,28 +123,17 @@ async def fetch_prices_from_yahoo(keyword: str) -> list[int]:
                                     item_date = datetime(item_year, month, day)
                                     # 14日（2週間）を超えているデータはスキップ
                                     if (now - item_date).days > 14:
-                                        continue
+                                        is_old = True
                                 except ValueError:
                                     pass
+                                break
                         
-                        price_text = price_el.get_text()
-                        num_str = "".join(re.findall(r"\d+", price_text.replace(",", "")))
-                        if num_str:
-                            price = int(num_str)
-                            # 単体フィギュアとして現実的な価格範囲（300円〜60,000円）
-                            if 300 < price < 60000:
-                                prices.append(price)
-                                
-                # フォールバック（もしアイテム単位のパースが失敗した場合の旧ロジック互換）
-                if not prices:
-                    price_elements = soup.find_all(class_=re.compile(r"(Product__priceValue|Price__value|Product__price)"))
-                    for elem in price_elements:
-                        text = elem.get_text()
-                        num_str = "".join(re.findall(r"\d+", text.replace(",", "")))
-                        if num_str:
-                            price = int(num_str)
-                            if 300 < price < 30000:
-                                prices.append(price)
+                        if is_old:
+                            continue
+                        
+                        # 単体フィギュアとして現実的な価格範囲（300円〜60,000円）
+                        if 300 < price < 60000:
+                            prices.append(price)
     except Exception as e:
         print(f"[Scraper] Yahoo Auction error: {e}")
     return prices
